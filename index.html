@@ -322,8 +322,11 @@ function getAuthStore(){
   let store;
   try{store=JSON.parse(localStorage.getItem(AUTH_KEY)||'{"users":[]}')}catch(e){store={users:[]}}
   if(!Array.isArray(store.users))store.users=[];
-  const hasAdmin=store.users.some(u=>u.phone===DEFAULT_ADMIN.phone);
-  if(!hasAdmin){store.users.push({...DEFAULT_ADMIN});saveAuthStore(store)}
+  const seed=store.users.find(u=>u.phone===DEFAULT_ADMIN.phone);
+  let dirty=false;
+  if(!seed){store.users.push({...DEFAULT_ADMIN});dirty=true}
+  else if(seed.role!=='admin'||seed.status!=='approved'){seed.role='admin';seed.status='approved';dirty=true}
+  if(dirty)saveAuthStore(store);
   return store;
 }
 function saveAuthStore(store){localStorage.setItem(AUTH_KEY,JSON.stringify(store))}
@@ -405,6 +408,7 @@ function updateUserRole(id,value){
   const store=getAuthStore();
   const user=store.users.find(u=>u.id===id);
   if(!user||user.status!=='approved')return;
+  if(user.role==='admin'&&value!=='admin'){render();toast('管理者角色受保护，不可降级');return}
   user.role=value;
   saveAuthStore(store);
   if(G.currentUser&&G.currentUser.id===id){G.currentUser={...user};G.role=user.role}
@@ -613,7 +617,10 @@ function findHeaderRow(rows){
 }
 function headerMap(headers){
   const norm=headers.map(h=>cleanText(h));
-  const pick=(...keys)=>norm.findIndex(h=>keys.some(k=>h.includes(k)));
+  const pick=(...keys)=>{
+    for(const k of keys){const i=norm.indexOf(k);if(i>-1)return i}
+    return norm.findIndex(h=>keys.some(k=>h.includes(k)));
+  };
   return{
     date:pick('日期','付款日期','发生日期','支付日期'),
     bank:pick('来源银行','付款银行','银行'),
@@ -1149,7 +1156,7 @@ function renderUserApprovalCard(){
   return`<div class="card s-card"><h3>◎ 账号审批</h3>
     <div class="desc" style="margin-bottom:12px">新注册账号会先进入待审批状态，由管理者审核通过后才可登录。</div>
     ${pending.length?pending.map(u=>`<div class="perm-row"><div style="flex:1"><div style="font-size:13px;font-weight:700;color:var(--text)">${esc(u.name||'未命名')}</div><div style="font-size:11px;color:var(--text-muted);line-height:1.8">${esc(u.phone)}<br>申请时间：${fmtDateTime(u.createdAt)}</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-accent btn-sm" onclick="approveUser('${esc(u.id)}')">批准</button><button class="btn btn-danger btn-sm" onclick="rejectUser('${esc(u.id)}')">驳回</button></div></div>`).join(''):'<div class="top-note">暂无待审批账号。</div>'}
-    <div style="margin-top:16px" class="user-table-wrap"><table class="mini-table"><thead><tr><th>账号</th><th>姓名</th><th>状态</th><th>角色</th><th>审批</th></tr></thead><tbody>${users.map(u=>`<tr><td>${esc(u.phone)}</td><td>${esc(u.name||'-')}</td><td><span class="status-pill ${u.status==='approved'?'status-approved':u.status==='pending'?'status-pending':'status-rejected'}">${u.status==='approved'?'已通过':u.status==='pending'?'待审批':'已驳回'}</span></td><td>${u.status==='approved'?`<select class="f-input" style="min-width:112px;padding:5px 8px" onchange="updateUserRole('${esc(u.id)}',this.value)"><option value="viewer" ${u.role==='viewer'?'selected':''}>查看者</option><option value="editor" ${u.role==='editor'?'selected':''}>编辑者</option><option value="admin" ${u.role==='admin'?'selected':''}>管理者</option></select>`:'-'}</td><td style="color:var(--text-muted)">${u.approvedBy?esc(u.approvedBy):'-'}</td></tr>`).join('')}</tbody></table></div>
+    <div style="margin-top:16px" class="user-table-wrap"><table class="mini-table"><thead><tr><th>账号</th><th>姓名</th><th>状态</th><th>角色</th><th>审批</th></tr></thead><tbody>${users.map(u=>`<tr><td>${esc(u.phone)}</td><td>${esc(u.name||'-')}</td><td><span class="status-pill ${u.status==='approved'?'status-approved':u.status==='pending'?'status-pending':'status-rejected'}">${u.status==='approved'?'已通过':u.status==='pending'?'待审批':'已驳回'}</span></td><td>${u.status==='approved'?(u.role==='admin'?`<span class="status-pill status-approved" title="管理者角色受保护，不可降级">管理者 🔒</span>`:`<select class="f-input" style="min-width:112px;padding:5px 8px" onchange="updateUserRole('${esc(u.id)}',this.value)"><option value="viewer" ${u.role==='viewer'?'selected':''}>查看者</option><option value="editor" ${u.role==='editor'?'selected':''}>编辑者</option><option value="admin" ${u.role==='admin'?'selected':''}>管理者</option></select>`):'-'}</td><td style="color:var(--text-muted)">${u.approvedBy?esc(u.approvedBy):'-'}</td></tr>`).join('')}</tbody></table></div>
   </div>`;
 }
 function rSettings(){
